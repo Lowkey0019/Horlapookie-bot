@@ -42,7 +42,7 @@ export default {
     const totalMemory = Math.round((memUsage.heapTotal / 1024 / 1024) * 100) / 100;
     const memoryPercent = Math.round((usedMemory / totalMemory) * 100);
 
-    const bodyText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.buttonsResponseMessage?.selectedButtonId || "").trim();
+    const bodyText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.buttonsResponseMessage?.selectedButtonId || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId || "").trim();
     
     if (bodyText.toLowerCase() === "next") {
         const nextMenu = `╔════ *SUPPORT & LINKS* ════╗

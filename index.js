@@ -513,12 +513,41 @@ async function startBot() {
           await antitag.onMessage(msg, { sock });
         }
 
+        // Antilink monitor (Groups only, not from bot)
         if (isGroup && !isFromMe) {
           const userMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
+
+          // Anti WhatsApp Channel Link
           if (global.antiChannelLink?.[remoteJid] && (userMessage.includes('whatsapp.com/channel/'))) {
               await sock.sendMessage(remoteJid, { delete: msg.key });
               return;
           }
+
+          // Anti Telegram Link
+          if (global.antiTelegramLink?.[remoteJid]) {
+            const telegramPattern = /(t\.me\/|telegram\.me\/)/i;
+            if (telegramPattern.test(userMessage)) {
+              await sock.sendMessage(remoteJid, { delete: msg.key });
+              
+              if (global.antiTelegramKick?.[remoteJid]) {
+                await sock.groupParticipantsUpdate(remoteJid, [senderJid], 'remove');
+              } else if (global.antiTelegramWarn?.[remoteJid]) {
+                if (!global.antilinkWarnings) global.antilinkWarnings = {};
+                if (!global.antilinkWarnings[remoteJid]) global.antilinkWarnings[remoteJid] = {};
+                global.antilinkWarnings[remoteJid][senderJid] = (global.antilinkWarnings[remoteJid][senderJid] || 0) + 1;
+                
+                if (global.antilinkWarnings[remoteJid][senderJid] >= 3) {
+                  await sock.sendMessage(remoteJid, { text: `⚠️ @${senderNumber} has been kicked for repeated telegram link sharing.`, mentions: [senderJid] });
+                  await sock.groupParticipantsUpdate(remoteJid, [senderJid], 'remove');
+                  delete global.antilinkWarnings[remoteJid][senderJid];
+                } else {
+                  await sock.sendMessage(remoteJid, { text: `⚠️ @${senderNumber}, telegram links are not allowed! Warning: ${global.antilinkWarnings[remoteJid][senderJid]}/3`, mentions: [senderJid] });
+                }
+              }
+              return;
+            }
+          }
+
           await handleLinkDetection(sock, remoteJid, msg, userMessage, senderJid);
         }
 
