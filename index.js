@@ -226,12 +226,36 @@ async function setupAuthState() {
      console.log(color('\n╔══════════════════════════════════════════════╗', 'yellow'));
      console.log(color('║          ⚠️  SESSION DATA MISSING            ║', 'yellow'));
      console.log(color('╠══════════════════════════════════════════════╣', 'yellow'));
-     console.log(color('║  Please provide your Session ID via:         ║', 'yellow'));
-     console.log(color('║  1. BOT_SESSION_DATA Environment Variable    ║', 'yellow'));
-     console.log(color('║  2. SESSION-ID File                          ║', 'yellow'));
+     console.log(color('║  Please PASTE your Session ID below and      ║', 'yellow'));
+     console.log(color('║  press ENTER to connect:                     ║', 'yellow'));
      console.log(color('║                                              ║', 'yellow'));
-     console.log(color('║  * QR Code scanning is currently disabled *  ║', 'yellow'));
+     console.log(color('║  * It will be saved to SESSION-ID file *     ║', 'yellow'));
      console.log(color('╚══════════════════════════════════════════════╝\n', 'yellow'));
+
+     const readline = await import('readline');
+     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+     
+     const input = await new Promise((resolve) => rl.question('Paste Session ID: ', resolve));
+     rl.close();
+     
+     if (input && input.trim()) {
+         sessionData = input.trim();
+         fs.writeFileSync(SESSION_ID_FILE, sessionData);
+         console.log(color('[SUCCESS] Session ID saved to SESSION-ID file.', 'green'));
+         
+         // Try to parse and save to creds.json immediately
+         try {
+             const normalized = detectAndNormalizeSession(sessionData);
+             if (normalized) {
+                 const decoded = Buffer.from(normalized, 'base64').toString('utf-8');
+                 const parsed = JSON.parse(decoded);
+                 fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
+             }
+         } catch (e) {}
+     } else {
+         console.log(color('[ERROR] No Session ID provided. Exiting...', 'red'));
+         process.exit(1);
+     }
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
