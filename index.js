@@ -231,6 +231,12 @@ async function setupAuthState() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    
+    // Test the state immediately to ensure it's not corrupted
+    if (!state || !state.creds) {
+       throw new Error('AuthState state or creds is null/undefined');
+    }
+
     return { state, saveCreds };
   } catch (err) {
     console.error('[ERROR] setupAuthState failed:', err.message);
@@ -368,22 +374,40 @@ if (fs.existsSync(selfCommandsDir)) {
 }
 
 async function startBot() {
-  const { state, saveCreds } = await setupAuthState();
-  const sock = makeWASocket({
-    auth: state,
-    logger: pino({ level: 'silent' }),
-    browser: ['Eclipse MD', 'Chrome', '1.0.0']
-  });
+  try {
+    const { state, saveCreds } = await setupAuthState();
+    const sock = makeWASocket({
+      auth: state,
+      logger: pino({ level: 'silent' }),
+      browser: ['Eclipse MD', 'Chrome', '1.0.0'],
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000
+    });
 
-  sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) startBot();
-    } else if (connection === 'open') {
-        const ascii = `
+    // Add a connection timeout safety
+    const connectionTimeout = setTimeout(() => {
+        if (sock.user) return;
+        console.log(color('\n[TIMEOUT] Connection taking too long. Check your session ID or internet.', 'red'));
+    }, 60000);
+
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      
+      if (qr) {
+          console.log(color('\n[QR] Scan the code above to login if session ID failed.', 'yellow'));
+      }
+
+      if (connection === 'close') {
+        clearTimeout(connectionTimeout);
+        const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        console.log(color(`[INFO] Connection closed: ${lastDisconnect.error?.message || 'Unknown reason'}. Reconnecting: ${shouldReconnect}`, 'yellow'));
+        if (shouldReconnect) startBot();
+      } else if (connection === 'open') {
+          clearTimeout(connectionTimeout);
+          const ascii = `
   ══════════════════════════════════════════════════════
     ╔═╗╔═╗╦  ╦╔═╗╔═╗╔═╗   ╔╦╗╔╦╗
     ║╣ ║  ║  ║╠═╝╚═╗║╣ ───║║║║║║
@@ -400,201 +424,205 @@ async function startBot() {
             image: { url: welcomeImage },
             caption: `✅ *Eclipse MD Connected!*\n\n🤖 *Bot Name:* ${config.botName}\n👤 *Owner:* ${config.ownerName}\n⚡ *Prefix:* ${COMMAND_PREFIX}\n🌐 *Mode:* ${global.botMode}\n\nUse ${COMMAND_PREFIX}menu to start.`
         });
-    }
-  });
-
-  // Group update listener for welcome/goodbye
-  sock.ev.on('group-participants.update', async (update) => {
-    const { id, participants, action } = update;
-    try {
-        const welcomePath = path.join(__dirname, 'data', 'welcomeConfig.json');
-        if (!fs.existsSync(welcomePath)) fs.writeFileSync(welcomePath, '{}');
-        const welcomeConfig = JSON.parse(fs.readFileSync(welcomePath, 'utf-8'));
-        const groupSettings = welcomeConfig[id] || { welcome: 'off', goodbye: 'off' };
-
-        for (const jid of participants) {
-          if (action === 'add' && groupSettings.welcome === 'on') {
-            const metadata = await sock.groupMetadata(id);
-            const text = groupSettings.welcomeMsg || `Welcome @user to ${metadata.subject}!`;
-            await sock.sendMessage(id, { 
-              text: text.replace('@user', `@${jid.split('@')[0]}`),
-              mentions: [jid]
-            });
-          } else if (action === 'remove' && groupSettings.goodbye === 'on') {
-            const text = groupSettings.goodbyeMsg || `Goodbye @user from the group.`;
-            await sock.sendMessage(id, { 
-              text: text.replace('@user', `@${jid.split('@')[0]}`),
-              mentions: [jid]
-            });
-          }
-        }
-    } catch (e) {}
-  });
-
-  // Anticall system
-  sock.ev.on('call', async (calls) => {
-    const call = calls[0];
-    if (call.status === 'offer') {
-      const { voice, video, mode } = readAnticallState();
-      const isVideo = call.isVideo;
-      const shouldReject = (isVideo && video === 'on') || (!isVideo && voice === 'on');
-      
-      if (shouldReject) {
-        await sock.rejectCall(call.id, call.from);
-        
-        if (mode === 'block') {
-          await sock.sendMessage(call.from, { text: '⚠️ You have been blocked for calling the bot. Please contact the owner for unblocking.' });
-          await sock.updateBlockStatus(call.from, 'block');
-        } else {
-          await sock.sendMessage(call.from, { text: '📵 I am busy right now, please leave a message.' });
-        }
       }
-    }
-  });
+    });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || !botActive) return;
+    // Group update listener for welcome/goodbye
+    sock.ev.on('group-participants.update', async (update) => {
+      const { id, participants, action } = update;
+      try {
+          const welcomePath = path.join(__dirname, 'data', 'welcomeConfig.json');
+          if (!fs.existsSync(welcomePath)) fs.writeFileSync(welcomePath, '{}');
+          const welcomeConfig = JSON.parse(fs.readFileSync(welcomePath, 'utf-8'));
+          const groupSettings = welcomeConfig[id] || { welcome: 'off', goodbye: 'off' };
 
-    try {
-      let remoteJid = msg.key.remoteJid;
-      if (remoteJid.endsWith('@lid')) {
-        remoteJid = remoteJid.split('@')[0] + '@s.whatsapp.net';
-      }
-      const isGroup = remoteJid.endsWith('@g.us');
-      const isFromMe = msg.key.fromMe;
-      const senderJid = isGroup ? msg.key.participant : remoteJid;
-      const senderNumber = await normalizeJid(sock, senderJid, isGroup ? remoteJid : null);
-      const isOwner = isFromMe || senderNumber === config.ownerNumber.replace(/[^\d]/g, '');
-
-      // Antitag monitor (Groups only, not from bot)
-      if (isGroup && !isFromMe && antitag?.onMessage) {
-        await antitag.onMessage(msg, { sock });
-      }
-
-      // Antilink monitor (Groups only, not from bot)
-      if (isGroup && !isFromMe) {
-        const userMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
-        
-        // Anti WhatsApp Channel Link
-        if (global.antiChannelLink?.[remoteJid] && (userMessage.includes('whatsapp.com/channel/') || msg.message?.forwardedNewsletterMessageInfo || type === 'newsletterAdminMessage')) {
-            await sock.sendMessage(remoteJid, { delete: msg.key });
-            return;
-        }
-
-        // Anti Telegram Link
-        if (global.antiTelegramLink?.[remoteJid] && (userMessage.includes('t.me/') || userMessage.includes('telegram.me/'))) {
-            await sock.sendMessage(remoteJid, { delete: msg.key });
-            return;
-        }
-
-        await handleLinkDetection(sock, remoteJid, msg, userMessage, senderJid);
-      }
-
-      // Antibug system (DM only)
-      if (!isGroup && !isFromMe) {
-        const antibugSettings = loadAntibugSettings();
-        if (antibugSettings.enabled) {
-          const now = Date.now();
-          if (!messageCount[senderJid]) messageCount[senderJid] = [];
-          messageCount[senderJid] = messageCount[senderJid].filter(t => now - t < TIME_LIMIT);
-          messageCount[senderJid].push(now);
-          if (messageCount[senderJid].length > MESSAGE_LIMIT) {
-            await sock.updateBlockStatus(senderJid, 'block');
-            return;
-          }
-        }
-      }
-
-      await storeMessage(sock, msg);
-
-      let body = '';
-      const type = Object.keys(msg.message)[0];
-      if (type === 'conversation') body = msg.message.conversation;
-      else if (type === 'extendedTextMessage') body = msg.message.extendedTextMessage.text;
-      else if (type === 'imageMessage') body = msg.message.imageMessage.caption;
-      else if (type === 'videoMessage') body = msg.message.videoMessage.caption;
-      else if (type === 'buttonsResponseMessage') body = msg.message.buttonsResponseMessage.selectedButtonId;
-      else if (type === 'interactiveResponseMessage') {
-        const flow = msg.message.interactiveResponseMessage?.nativeFlowResponseMessge?.paramsJson;
-        if (flow) body = JSON.parse(flow).id;
-      } else if (type === 'listResponseMessage') body = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
-
-      if (!body) return;
-
-      const isReply = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-      const sessionKey = remoteJid;
-
-      if (body.startsWith(COMMAND_PREFIX) || (['1', '2'].includes(body.trim()) && (sessions.has(sessionKey) || isReply))) {
-        // Anti-spam cooldown check (5 seconds between commands)
-        const persistentSettings = loadSettings();
-        if (persistentSettings.antiSpam && !isOwner) {
-          const now = Date.now();
-          const userCooldown = cooldowns.get(senderJid) || 0;
-          if (now - userCooldown < COOLDOWN_TIME) {
-            const remaining = Math.ceil((COOLDOWN_TIME - (now - userCooldown)) / 1000);
-            await sock.sendMessage(remoteJid, { text: `⏳ Please wait ${remaining}s before using another command.` }, { quoted: msg });
-            return;
-          }
-          cooldowns.set(senderJid, now);
-        }
-
-        let commandName, args;
-        if (body.startsWith(COMMAND_PREFIX)) {
-          args = body.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
-          commandName = args.shift()?.toLowerCase();
-        } else if (['1', '2'].includes(body.trim())) {
-          commandName = 'video';
-          args = [body.trim()];
-        }
-
-        if (commandName === 'self' && isOwner) {
-          botMode = 'self';
-          updateSetting('botMode', 'self');
-          const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-          await sock.sendMessage(remoteJid, { text: '🤖 Switched to SELF mode.' });
-          if (remoteJid !== myJid) await sock.sendMessage(myJid, { text: '🤖 Switched to SELF mode.' });
-          return;
-        }
-        if (commandName === 'public' && isOwner) {
-          botMode = 'public';
-          updateSetting('botMode', 'public');
-          const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-          await sock.sendMessage(remoteJid, { text: '🌐 Switched to PUBLIC mode.' });
-          if (remoteJid !== myJid) await sock.sendMessage(myJid, { text: '🌐 Switched to PUBLIC mode.' });
-          return;
-        }
-
-        if (botMode === 'self' && !isOwner) return;
-
-        const command = (botMode === 'self' || isOwner) ? (commands.get(commandName) || selfCommands.get(commandName)) : commands.get(commandName);
-        
-        if (command) {
-          // Listen to self commands when in self mode or when owner sends from their own account
-          if (botMode === 'self' && !isOwner) return;
-          
-          await command.execute(msg, { sock, args, isOwner, botMode, settings: { prefix: COMMAND_PREFIX } });
-        } else if (botMode === 'self' && isOwner) {
-            // Fallback for self commands that might only be in selfCommands Map
-            const selfCommand = selfCommands.get(commandName);
-            if (selfCommand) {
-                await selfCommand.execute(msg, { sock, args, isOwner, botMode, settings: { prefix: COMMAND_PREFIX } });
+          for (const jid of participants) {
+            if (action === 'add' && groupSettings.welcome === 'on') {
+              const metadata = await sock.groupMetadata(id);
+              const text = groupSettings.welcomeMsg || `Welcome @user to ${metadata.subject}!`;
+              await sock.sendMessage(id, { 
+                text: text.replace('@user', `@${jid.split('@')[0]}`),
+                mentions: [jid]
+              });
+            } else if (action === 'remove' && groupSettings.goodbye === 'on') {
+              const text = groupSettings.goodbyeMsg || `Goodbye @user from the group.`;
+              await sock.sendMessage(id, { 
+                text: text.replace('@user', `@${jid.split('@')[0]}`),
+                mentions: [jid]
+              });
             }
-        } else if (sessions.has(from) && !isNaN(body)) {
-          // Handle numbered replies for sessions
-          const movieCmd = commands.get('movie');
-          if (movieCmd) await movieCmd.execute(msg, { sock, args: [body.trim()], isOwner });
-        } else if (!isGroup && body.startsWith(COMMAND_PREFIX)) {
-          // Unknown command in DM
-          await sock.sendMessage(remoteJid, { text: `❓ Unknown command: ${commandName}. Try ${COMMAND_PREFIX}menu` });
+          }
+      } catch (e) {}
+    });
+
+    // Anticall system
+    sock.ev.on('call', async (calls) => {
+      const call = calls[0];
+      if (call.status === 'offer') {
+        const { voice, video, mode } = readAnticallState();
+        const isVideo = call.isVideo;
+        const shouldReject = (isVideo && video === 'on') || (!isVideo && voice === 'on');
+        
+        if (shouldReject) {
+          await sock.rejectCall(call.id, call.from);
+          
+          if (mode === 'block') {
+            await sock.sendMessage(call.from, { text: '⚠️ You have been blocked for calling the bot. Please contact the owner for unblocking.' });
+            await sock.updateBlockStatus(call.from, 'block');
+          } else {
+            await sock.sendMessage(call.from, { text: '📵 I am busy right now, please leave a message.' });
+          }
         }
-      } else if (chatbotHandler && !isFromMe) {
-        await chatbotHandler(sock, msg, body, senderJid);
       }
-    } catch (err) {
-      console.error('[ERROR] messages.upsert:', err);
-    }
-  });
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      const msg = messages[0];
+      if (!msg.message || !botActive) return;
+
+      try {
+        let remoteJid = msg.key.remoteJid;
+        if (remoteJid.endsWith('@lid')) {
+          remoteJid = remoteJid.split('@')[0] + '@s.whatsapp.net';
+        }
+        const isGroup = remoteJid.endsWith('@g.us');
+        const isFromMe = msg.key.fromMe;
+        const senderJid = isGroup ? msg.key.participant : remoteJid;
+        const senderNumber = await normalizeJid(sock, senderJid, isGroup ? remoteJid : null);
+        const isOwner = isFromMe || senderNumber === config.ownerNumber.replace(/[^\d]/g, '');
+
+        // Antitag monitor (Groups only, not from bot)
+        if (isGroup && !isFromMe && antitag?.onMessage) {
+          await antitag.onMessage(msg, { sock });
+        }
+
+        // Antilink monitor (Groups only, not from bot)
+        if (isGroup && !isFromMe) {
+          const userMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
+          
+          // Anti WhatsApp Channel Link
+          if (global.antiChannelLink?.[remoteJid] && (userMessage.includes('whatsapp.com/channel/') || msg.message?.forwardedNewsletterMessageInfo || type === 'newsletterAdminMessage')) {
+              await sock.sendMessage(remoteJid, { delete: msg.key });
+              return;
+          }
+
+          // Anti Telegram Link
+          if (global.antiTelegramLink?.[remoteJid] && (userMessage.includes('t.me/') || userMessage.includes('telegram.me/'))) {
+              await sock.sendMessage(remoteJid, { delete: msg.key });
+              return;
+          }
+
+          await handleLinkDetection(sock, remoteJid, msg, userMessage, senderJid);
+        }
+
+        // Antibug system (DM only)
+        if (!isGroup && !isFromMe) {
+          const antibugSettings = loadAntibugSettings();
+          if (antibugSettings.enabled) {
+            const now = Date.now();
+            if (!messageCount[senderJid]) messageCount[senderJid] = [];
+            messageCount[senderJid] = messageCount[senderJid].filter(t => now - t < TIME_LIMIT);
+            messageCount[senderJid].push(now);
+            if (messageCount[senderJid].length > MESSAGE_LIMIT) {
+              await sock.updateBlockStatus(senderJid, 'block');
+              return;
+            }
+          }
+        }
+
+        await storeMessage(sock, msg);
+
+        let body = '';
+        const type = Object.keys(msg.message)[0];
+        if (type === 'conversation') body = msg.message.conversation;
+        else if (type === 'extendedTextMessage') body = msg.message.extendedTextMessage.text;
+        else if (type === 'imageMessage') body = msg.message.imageMessage.caption;
+        else if (type === 'videoMessage') body = msg.message.videoMessage.caption;
+        else if (type === 'buttonsResponseMessage') body = msg.message.buttonsResponseMessage.selectedButtonId;
+        else if (type === 'interactiveResponseMessage') {
+          const flow = msg.message.interactiveResponseMessage?.nativeFlowResponseMessge?.paramsJson;
+          if (flow) body = JSON.parse(flow).id;
+        } else if (type === 'listResponseMessage') body = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
+
+        if (!body) return;
+
+        const isReply = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const sessionKey = remoteJid;
+
+        if (body.startsWith(COMMAND_PREFIX) || (['1', '2'].includes(body.trim()) && (sessions.has(sessionKey) || isReply))) {
+          // Anti-spam cooldown check (5 seconds between commands)
+          const persistentSettings = loadSettings();
+          if (persistentSettings.antiSpam && !isOwner) {
+            const now = Date.now();
+            const userCooldown = cooldowns.get(senderJid) || 0;
+            if (now - userCooldown < COOLDOWN_TIME) {
+              const remaining = Math.ceil((COOLDOWN_TIME - (now - userCooldown)) / 1000);
+              await sock.sendMessage(remoteJid, { text: `⏳ Please wait ${remaining}s before using another command.` }, { quoted: msg });
+              return;
+            }
+            cooldowns.set(senderJid, now);
+          }
+
+          let commandName, args;
+          if (body.startsWith(COMMAND_PREFIX)) {
+            args = body.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
+            commandName = args.shift()?.toLowerCase();
+          } else if (['1', '2'].includes(body.trim())) {
+            commandName = 'video';
+            args = [body.trim()];
+          }
+
+          if (commandName === 'self' && isOwner) {
+            botMode = 'self';
+            updateSetting('botMode', 'self');
+            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            await sock.sendMessage(remoteJid, { text: '🤖 Switched to SELF mode.' });
+            if (remoteJid !== myJid) await sock.sendMessage(myJid, { text: '🤖 Switched to SELF mode.' });
+            return;
+          }
+          if (commandName === 'public' && isOwner) {
+            botMode = 'public';
+            updateSetting('botMode', 'public');
+            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            await sock.sendMessage(remoteJid, { text: '🌐 Switched to PUBLIC mode.' });
+            if (remoteJid !== myJid) await sock.sendMessage(myJid, { text: '🌐 Switched to PUBLIC mode.' });
+            return;
+          }
+
+          if (botMode === 'self' && !isOwner) return;
+
+          const command = (botMode === 'self' || isOwner) ? (commands.get(commandName) || selfCommands.get(commandName)) : commands.get(commandName);
+          
+          if (command) {
+            // Listen to self commands when in self mode or when owner sends from their own account
+            if (botMode === 'self' && !isOwner) return;
+            
+            await command.execute(msg, { sock, args, isOwner, botMode, settings: { prefix: COMMAND_PREFIX } });
+          } else if (botMode === 'self' && isOwner) {
+              // Fallback for self commands that might only be in selfCommands Map
+              const selfCommand = selfCommands.get(commandName);
+              if (selfCommand) {
+                  await selfCommand.execute(msg, { sock, args, isOwner, botMode, settings: { prefix: COMMAND_PREFIX } });
+              }
+          } else if (sessions.has(from) && !isNaN(body)) {
+            // Handle numbered replies for sessions
+            const movieCmd = commands.get('movie');
+            if (movieCmd) await movieCmd.execute(msg, { sock, args: [body.trim()], isOwner });
+          } else if (!isGroup && body.startsWith(COMMAND_PREFIX)) {
+            // Unknown command in DM
+            await sock.sendMessage(remoteJid, { text: `❓ Unknown command: ${commandName}. Try ${COMMAND_PREFIX}menu` });
+          }
+        } else if (chatbotHandler && !isFromMe) {
+          await chatbotHandler(sock, msg, body, senderJid);
+        }
+      } catch (err) {
+        console.error('[ERROR] messages.upsert:', err);
+      }
+    });
+  } catch (err) {
+    console.error(color(`[FATAL] startBot failed: ${err.message}`, 'red'));
+    setTimeout(startBot, 10000); // Retry after 10s
+  }
 }
 
 startBot();
