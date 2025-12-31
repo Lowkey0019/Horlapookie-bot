@@ -1,0 +1,87 @@
+╔╭━━〔 *𝔼𝕔𝕝ɪᴘꜱᴇ 𝕄𝔻* 〕━━╮
+
+│ ✦ Mᴏᴅᴇ : public
+│ ✦ Pʟᴜɢɪɴs : 650
+│ ✦ Vᴇʀsɪᴏɴ : 1.2.6
+│ ✦ Year : 2025 - 2026
+│ ✦ Under Maintainance : true
+│ ✦ Uᴘᴛɪᴍᴇ : 0h 0m 0s
+│ ✦ Tɪᴍᴇ Nᴏᴡ : 12:00:00 PM
+│ ✦ Dᴀᴛᴇ Tᴏᴅᴀʏ : 12/31/2025
+│ ✦ Pʟᴀᴛғᴏʀᴍ : Linux
+│ ✦ Tɪᴍᴇ Zᴏɴᴇ : Africa/Lagos
+│ ✦ Sᴇʀᴠᴇʀ Rᴀᴍ : 0% Used
+╰─────────────────╯
+
+*Reply with "next" to see all support links.*
+
+╭━━━✦❮ 🛠️ BASIC TOOLS ❯✦━⊷
+┃✪  .echo
+┃✪  .log
+┃✪  .ping
+┃✪  .profile
+┃✪  .setusername
+┃✪  .time
+┃✪  .uptime
+┃✪  .userinfo
+╰━━━━━━━━━━━━━━━━━⊷
+
+╭━━━✦❮ 📢 CHANNEL TOOLS ❯✦━⊷
+┃✪  .newsletter
+╰━━━━━━━━━━━━━━━━━⊷
+
+╭━━━✦❮ 👥 GROUP MANAGEMENT ❯✦━⊷
+┃✪  .announce
+┃✪  .info
+┃✪  .grouplink
+┃✪  .getallmembers
+┃✪  .broadcast
+┃✪  .chatbot
+┃✪  .delete
+┃✪  .demote
+┃✪  .gdesc
+┃✪  .gname
+┃✪  .groupinfo
+┃✪  .kick
+┃✪  .lock
+┃✪  .promote
+┃✪  .remove
+┃✪  .tagall
+┃✪  .unlock
+┃✪  .open
+┃✪  .warn
+┃✪  .welcome
+┃✪  .goodbye
+┃✪  .antilink
+┃✪  .antitag
+┃✪  .groupmanage
+╰━━━━━━━━━━━━━━━━━⊷
+
+╭━━━✦❮ 🛡️ ANTIGROUP COMMANDS ❯✦━⊷
+┃✪  .antilink
+┃✪  .antitag
+┃✪  .antichannellink
+┃✪  .antitelegramlink
+╰━━━━━━━━━━━━━━━━━⊷
+
+╭━━━✦❮ 🔄 BOT MODES ❯✦━⊷
+┃✪  .mode
+┃✪  .self
+┃✪  .public
+╰━━━━━━━━━━━━━━━━━⊷
+
+╭━━━✦❮ ℹ️ BOT INFO ❯✦━⊷
+┃✪  .xmd
+┃✪  .alive
+╰━━━━━━━━━━━━━━━━━⊷
+
+╔══════════════════════════════════╗
+║   📞 NEED HELP? CONTACT SUPPORT  ║
+║  🌐 www.eclipse-support.zone.id  ║
+╚══════════════════════════════════╝
+
+> ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝔼𝕔𝕝ɪᴘꜱᴇ 𝕄𝔻©
+
+━━━━━━━━━━━━━━━━━━━━━━
+📱 *GitHub:* https://github.com/horlapookie/Eclipse-MD
+━━━━━━━━━━━━━━━━━━━━━━
