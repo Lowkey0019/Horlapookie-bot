@@ -223,15 +223,6 @@ async function setupAuthState() {
       } catch (err) {}
     }
     
-    // Check if creds exist now, if not and no sessionData, it would fail anyway
-    if (!fs.existsSync(credsPath) && !sessionData) {
-       console.log('\x1b[33m%s\x1b[0m', '\n⚠️ SESSION DATA MISSING');
-       console.log('No session ID found in environment or file.');
-       console.log('Please paste your session ID below or scan the QR code next.\n');
-       // In a non-interactive environment like this, we'll just let it wait for QR
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
     
     // Test the state immediately to ensure it's not corrupted
     if (!state || !state.creds) {
@@ -394,39 +385,6 @@ async function startBot() {
         console.log(color('\n[TIMEOUT] Connection taking too long. Check your session ID or internet.', 'red'));
     }, 60000);
 
-    sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      
-      if (qr) {
-          console.log(color('\n[QR] Scan the code above to login if session ID failed.', 'yellow'));
-      }
-
-      if (connection === 'close') {
-        clearTimeout(connectionTimeout);
-        const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log(color(`[INFO] Connection closed: ${lastDisconnect.error?.message || 'Unknown reason'}. Reconnecting: ${shouldReconnect}`, 'yellow'));
-        if (shouldReconnect) startBot();
-      } else if (connection === 'open') {
-          clearTimeout(connectionTimeout);
-          const ascii = `
-  ══════════════════════════════════════════════════════
-    ╔═╗╔═╗╦  ╦╔═╗╔═╗╔═╗   ╔╦╗╔╦╗
-    ║╣ ║  ║  ║╠═╝╚═╗║╣ ───║║║║║║
-    ╚═╝╚═╝╩═╝╩╩  ╚═╝╚═╝   ╩ ╩╩ ╩
-  ══════════════════════════════════════════════════════
-        `;
-        console.log(color(ascii, 'cyan'));
-        console.log(color('[INFO] Connection opened successfully', 'green'));
-        
-        const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-        const welcomeImage = "https://files.catbox.moe/vsxdpj.jpg"; // Using menu image as default welcome
-        
-        await sock.sendMessage(myJid, { 
-            image: { url: welcomeImage },
-            caption: `✅ *Eclipse MD Connected!*\n\n🤖 *Bot Name:* ${config.botName}\n👤 *Owner:* ${config.ownerName}\n⚡ *Prefix:* ${COMMAND_PREFIX}\n🌐 *Mode:* ${global.botMode}\n\nUse ${COMMAND_PREFIX}menu to start.`
-        });
-      }
-    });
 
     // Group update listener for welcome/goodbye
     sock.ev.on('group-participants.update', async (update) => {
