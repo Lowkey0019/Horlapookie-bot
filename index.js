@@ -213,32 +213,34 @@ async function setupAuthState() {
     sessionData = detectAndNormalizeSession(sessionData);
   }
 
-  try {
-    const credsPath = path.join(authDir, 'creds.json');
-    if (!fs.existsSync(credsPath) && sessionData) {
-      try {
-        const decoded = Buffer.from(sessionData, 'base64').toString('utf-8');
-        const parsed = JSON.parse(decoded);
-        fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
-      } catch (err) {}
-    }
-    
-    
-    // Test the state immediately to ensure it's not corrupted
-    if (!state || !state.creds) {
-       throw new Error('AuthState state or creds is null/undefined');
-    }
-
-    return { state, saveCreds };
-  } catch (err) {
-    console.error('[ERROR] setupAuthState failed:', err.message);
-    console.error('\n⚠️ SESSION SETUP FAILED');
-    console.error('Please provide your session ID/authentication data:\n');
-    console.error('Option 1: Set BOT_SESSION_DATA environment variable');
-    console.error('Option 2: Create SESSION-ID file with your session data');
-    console.error('Option 3: Scan QR code on next connection attempt\n');
-    process.exit(1);
+  const credsPath = path.join(authDir, 'creds.json');
+  if (!fs.existsSync(credsPath) && sessionData) {
+    try {
+      const decoded = Buffer.from(sessionData, 'base64').toString('utf-8');
+      const parsed = JSON.parse(decoded);
+      fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
+    } catch (err) {}
   }
+  
+  if (!fs.existsSync(credsPath) && !sessionData) {
+     console.log(color('\n╔══════════════════════════════════════════════╗', 'yellow'));
+     console.log(color('║          ⚠️  SESSION DATA MISSING            ║', 'yellow'));
+     console.log(color('╠══════════════════════════════════════════════╣', 'yellow'));
+     console.log(color('║  Please provide your Session ID via:         ║', 'yellow'));
+     console.log(color('║  1. BOT_SESSION_DATA Environment Variable    ║', 'yellow'));
+     console.log(color('║  2. SESSION-ID File                          ║', 'yellow'));
+     console.log(color('║                                              ║', 'yellow'));
+     console.log(color('║  * QR Code scanning is currently disabled *  ║', 'yellow'));
+     console.log(color('╚══════════════════════════════════════════════╝\n', 'yellow'));
+  }
+
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  
+  if (!state || !state.creds) {
+     throw new Error('AuthState state or creds is null/undefined');
+  }
+
+  return { state, saveCreds };
 }
 
 async function normalizeJid(sock, jid, groupId) {
@@ -374,19 +376,54 @@ async function startBot() {
       browser: ['Eclipse MD', 'Chrome', '1.0.0'],
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 60000,
-      keepAliveIntervalMs: 30000
+      keepAliveIntervalMs: 30000,
+      printQRInTerminal: false
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Add a connection timeout safety
     const connectionTimeout = setTimeout(() => {
         if (sock.user) return;
-        console.log(color('\n[TIMEOUT] Connection taking too long. Check your session ID or internet.', 'red'));
+        console.log(color('\n[TIMEOUT] Connection taking too long. Check your session ID.', 'red'));
     }, 60000);
 
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      
+      if (connection === 'close') {
+        clearTimeout(connectionTimeout);
+        const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        console.log(color(`[INFO] Connection closed: ${lastDisconnect.error?.message || 'Unknown reason'}. Reconnecting: ${shouldReconnect}`, 'yellow'));
+        if (shouldReconnect) startBot();
+      } else if (connection === 'open') {
+          clearTimeout(connectionTimeout);
+          const ascii = `
+  ══════════════════════════════════════════════════════
+    ╔═╗╔═╗╦  ╦╔═╗╔═╗╔═╗   ╔╦╗╔╦╗
+    ║╣ ║  ║  ║╠═╝╚═╗║╣ ───║║║║║║
+    ╚═╝╚═╝╩═╝╩╩  ╚═╝╚═╝   ╩ ╩╩ ╩
+  ══════════════════════════════════════════════════════
+        `;
+        console.log(color(ascii, 'cyan'));
+        
+        const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+        const accountName = sock.user.name || config.ownerName;
+        const connectedNumber = sock.user.id.split(':')[0];
 
-    // Group update listener for welcome/goodbye
+        console.log(color(`[SUCCESS] Connected to WhatsApp`, 'green'));
+        console.log(color(`[ACCOUNT] Name: ${accountName}`, 'cyan'));
+        console.log(color(`[ACCOUNT] Number: ${connectedNumber}`, 'cyan'));
+        console.log(color(`[CONFIG] Prefix: ${COMMAND_PREFIX}`, 'cyan'));
+        
+        const welcomeImage = "https://files.catbox.moe/vsxdpj.jpg";
+        
+        await sock.sendMessage(myJid, { 
+            image: { url: welcomeImage },
+            caption: `✅ *Eclipse MD Connected!*\n\n🤖 *Account:* ${accountName}\n🔢 *Number:* ${connectedNumber}\n⚡ *Prefix:* ${COMMAND_PREFIX}\n🌐 *Mode:* ${global.botMode}\n\nUse ${COMMAND_PREFIX}menu to start.`
+        });
+      }
+    });
+
     sock.ev.on('group-participants.update', async (update) => {
       const { id, participants, action } = update;
       try {
@@ -414,7 +451,6 @@ async function startBot() {
       } catch (e) {}
     });
 
-    // Anticall system
     sock.ev.on('call', async (calls) => {
       const call = calls[0];
       if (call.status === 'offer') {
@@ -424,12 +460,11 @@ async function startBot() {
         
         if (shouldReject) {
           await sock.rejectCall(call.id, call.from);
-          
           if (mode === 'block') {
-            await sock.sendMessage(call.from, { text: '⚠️ You have been blocked for calling the bot. Please contact the owner for unblocking.' });
+            await sock.sendMessage(call.from, { text: '⚠️ You have been blocked for calling the bot.' });
             await sock.updateBlockStatus(call.from, 'block');
           } else {
-            await sock.sendMessage(call.from, { text: '📵 I am busy right now, please leave a message.' });
+            await sock.sendMessage(call.from, { text: '📵 I am busy right now.' });
           }
         }
       }
@@ -450,43 +485,17 @@ async function startBot() {
         const senderNumber = await normalizeJid(sock, senderJid, isGroup ? remoteJid : null);
         const isOwner = isFromMe || senderNumber === config.ownerNumber.replace(/[^\d]/g, '');
 
-        // Antitag monitor (Groups only, not from bot)
         if (isGroup && !isFromMe && antitag?.onMessage) {
           await antitag.onMessage(msg, { sock });
         }
 
-        // Antilink monitor (Groups only, not from bot)
         if (isGroup && !isFromMe) {
           const userMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
-          
-          // Anti WhatsApp Channel Link
-          if (global.antiChannelLink?.[remoteJid] && (userMessage.includes('whatsapp.com/channel/') || msg.message?.forwardedNewsletterMessageInfo || type === 'newsletterAdminMessage')) {
+          if (global.antiChannelLink?.[remoteJid] && (userMessage.includes('whatsapp.com/channel/'))) {
               await sock.sendMessage(remoteJid, { delete: msg.key });
               return;
           }
-
-          // Anti Telegram Link
-          if (global.antiTelegramLink?.[remoteJid] && (userMessage.includes('t.me/') || userMessage.includes('telegram.me/'))) {
-              await sock.sendMessage(remoteJid, { delete: msg.key });
-              return;
-          }
-
           await handleLinkDetection(sock, remoteJid, msg, userMessage, senderJid);
-        }
-
-        // Antibug system (DM only)
-        if (!isGroup && !isFromMe) {
-          const antibugSettings = loadAntibugSettings();
-          if (antibugSettings.enabled) {
-            const now = Date.now();
-            if (!messageCount[senderJid]) messageCount[senderJid] = [];
-            messageCount[senderJid] = messageCount[senderJid].filter(t => now - t < TIME_LIMIT);
-            messageCount[senderJid].push(now);
-            if (messageCount[senderJid].length > MESSAGE_LIMIT) {
-              await sock.updateBlockStatus(senderJid, 'block');
-              return;
-            }
-          }
         }
 
         await storeMessage(sock, msg);
@@ -497,79 +506,34 @@ async function startBot() {
         else if (type === 'extendedTextMessage') body = msg.message.extendedTextMessage.text;
         else if (type === 'imageMessage') body = msg.message.imageMessage.caption;
         else if (type === 'videoMessage') body = msg.message.videoMessage.caption;
-        else if (type === 'buttonsResponseMessage') body = msg.message.buttonsResponseMessage.selectedButtonId;
-        else if (type === 'interactiveResponseMessage') {
-          const flow = msg.message.interactiveResponseMessage?.nativeFlowResponseMessge?.paramsJson;
-          if (flow) body = JSON.parse(flow).id;
-        } else if (type === 'listResponseMessage') body = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
 
         if (!body) return;
 
         const isReply = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const sessionKey = remoteJid;
 
-        if (body.startsWith(COMMAND_PREFIX) || (['1', '2'].includes(body.trim()) && (sessions.has(sessionKey) || isReply))) {
-          // Anti-spam cooldown check (5 seconds between commands)
-          const persistentSettings = loadSettings();
-          if (persistentSettings.antiSpam && !isOwner) {
-            const now = Date.now();
-            const userCooldown = cooldowns.get(senderJid) || 0;
-            if (now - userCooldown < COOLDOWN_TIME) {
-              const remaining = Math.ceil((COOLDOWN_TIME - (now - userCooldown)) / 1000);
-              await sock.sendMessage(remoteJid, { text: `⏳ Please wait ${remaining}s before using another command.` }, { quoted: msg });
-              return;
-            }
-            cooldowns.set(senderJid, now);
-          }
-
-          let commandName, args;
-          if (body.startsWith(COMMAND_PREFIX)) {
-            args = body.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
-            commandName = args.shift()?.toLowerCase();
-          } else if (['1', '2'].includes(body.trim())) {
-            commandName = 'video';
-            args = [body.trim()];
-          }
+        if (body.startsWith(COMMAND_PREFIX)) {
+          const args = body.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
+          const commandName = args.shift()?.toLowerCase();
 
           if (commandName === 'self' && isOwner) {
             botMode = 'self';
             updateSetting('botMode', 'self');
-            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
             await sock.sendMessage(remoteJid, { text: '🤖 Switched to SELF mode.' });
-            if (remoteJid !== myJid) await sock.sendMessage(myJid, { text: '🤖 Switched to SELF mode.' });
             return;
           }
           if (commandName === 'public' && isOwner) {
             botMode = 'public';
             updateSetting('botMode', 'public');
-            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
             await sock.sendMessage(remoteJid, { text: '🌐 Switched to PUBLIC mode.' });
-            if (remoteJid !== myJid) await sock.sendMessage(myJid, { text: '🌐 Switched to PUBLIC mode.' });
             return;
           }
 
           if (botMode === 'self' && !isOwner) return;
 
           const command = (botMode === 'self' || isOwner) ? (commands.get(commandName) || selfCommands.get(commandName)) : commands.get(commandName);
-          
           if (command) {
-            // Listen to self commands when in self mode or when owner sends from their own account
-            if (botMode === 'self' && !isOwner) return;
-            
             await command.execute(msg, { sock, args, isOwner, botMode, settings: { prefix: COMMAND_PREFIX } });
-          } else if (botMode === 'self' && isOwner) {
-              // Fallback for self commands that might only be in selfCommands Map
-              const selfCommand = selfCommands.get(commandName);
-              if (selfCommand) {
-                  await selfCommand.execute(msg, { sock, args, isOwner, botMode, settings: { prefix: COMMAND_PREFIX } });
-              }
-          } else if (sessions.has(from) && !isNaN(body)) {
-            // Handle numbered replies for sessions
-            const movieCmd = commands.get('movie');
-            if (movieCmd) await movieCmd.execute(msg, { sock, args: [body.trim()], isOwner });
-          } else if (!isGroup && body.startsWith(COMMAND_PREFIX)) {
-            // Unknown command in DM
-            await sock.sendMessage(remoteJid, { text: `❓ Unknown command: ${commandName}. Try ${COMMAND_PREFIX}menu` });
           }
         } else if (chatbotHandler && !isFromMe) {
           await chatbotHandler(sock, msg, body, senderJid);
@@ -580,7 +544,7 @@ async function startBot() {
     });
   } catch (err) {
     console.error(color(`[FATAL] startBot failed: ${err.message}`, 'red'));
-    setTimeout(startBot, 10000); // Retry after 10s
+    setTimeout(startBot, 10000);
   }
 }
 
