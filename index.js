@@ -221,6 +221,15 @@ async function setupAuthState() {
         fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
       } catch (err) {}
     }
+    
+    // Check if creds exist now, if not and no sessionData, it would fail anyway
+    if (!fs.existsSync(credsPath) && !sessionData) {
+       console.log('\x1b[33m%s\x1b[0m', '\n⚠️ SESSION DATA MISSING');
+       console.log('No session ID found in environment or file.');
+       console.log('Please paste your session ID below or scan the QR code next.\n');
+       // In a non-interactive environment like this, we'll just let it wait for QR
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     return { state, saveCreds };
   } catch (err) {
@@ -362,7 +371,6 @@ async function startBot() {
   const { state, saveCreds } = await setupAuthState();
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true,
     logger: pino({ level: 'silent' }),
     browser: ['Eclipse MD', 'Chrome', '1.0.0']
   });
