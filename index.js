@@ -24,6 +24,7 @@ import { storeMessage, handleMessageRevocation } from './eclipse-plug/self/antid
 import { readState as readAnticallState } from './eclipse-plug/self/anticall.js';
 import { checkAutoGreetings } from './eclipse-plug/self/autogreet.js';
 import antitag from './eclipse-plug/antitag.js';
+import './lib/preview.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
