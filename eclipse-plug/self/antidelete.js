@@ -23,7 +23,7 @@ function loadAntideleteConfig() {
         if (fs.existsSync(CONFIG_PATH)) {
             local = JSON.parse(fs.readFileSync(CONFIG_PATH));
         }
-        return { enabled: config.antiDelete || local.enabled };
+        return { enabled: local.enabled || config.antiDelete };
     } catch {
         return { enabled: false };
     }

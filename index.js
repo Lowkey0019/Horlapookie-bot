@@ -438,6 +438,13 @@ async function startBot() {
         console.log(color(`[ACCOUNT] Name: ${accountName}`, 'cyan'));
         console.log(color(`[ACCOUNT] Number: ${connectedNumber}`, 'cyan'));
         console.log(color(`[CONFIG] Prefix: ${COMMAND_PREFIX}`, 'cyan'));
+
+        // Update config and persistent settings with the connected number
+        if (config.ownerNumber !== connectedNumber) {
+            console.log(color(`[INFO] Updating owner number to: ${connectedNumber}`, 'yellow'));
+            config.ownerNumber = connectedNumber;
+            updateSetting('ownerNumber', connectedNumber);
+        }
         
         const welcomeImage = "https://files.catbox.moe/vsxdpj.jpg";
         
@@ -552,6 +559,10 @@ async function startBot() {
         }
 
         await storeMessage(sock, msg);
+
+        if (msg.message?.protocolMessage?.type === 0 || msg.message?.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE) {
+            await handleMessageRevocation(sock, msg);
+        }
 
         let body = '';
         const type = Object.keys(msg.message)[0];
