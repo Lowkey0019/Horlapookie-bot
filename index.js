@@ -416,9 +416,16 @@ async function startBot() {
       
       if (connection === 'close') {
         clearTimeout(connectionTimeout);
-        const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log(color(`[INFO] Connection closed: ${lastDisconnect.error?.message || 'Unknown reason'}. Reconnecting: ${shouldReconnect}`, 'yellow'));
+        const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut && 
+                               lastDisconnect.error?.output?.statusCode !== 401;
+        console.log(color(`[INFO] Connection closed: ${lastDisconnect.error?.message || 'Unknown reason'} (Status: ${lastDisconnect.error?.output?.statusCode}). Reconnecting: ${shouldReconnect}`, 'yellow'));
         if (shouldReconnect) startBot();
+        else {
+            console.log(color('[ERROR] Logged out or session invalid. Please provide a new Session ID.', 'red'));
+            if (fs.existsSync(SESSION_ID_FILE)) fs.unlinkSync(SESSION_ID_FILE);
+            if (fs.existsSync(path.join(__dirname, 'auth_info', 'creds.json'))) fs.unlinkSync(path.join(__dirname, 'auth_info', 'creds.json'));
+            process.exit(1);
+        }
       } else if (connection === 'open') {
           clearTimeout(connectionTimeout);
           const ascii = `
@@ -515,6 +522,15 @@ async function startBot() {
         const senderJid = isGroup ? msg.key.participant : remoteJid;
         const senderNumber = await normalizeJid(sock, senderJid, isGroup ? remoteJid : null);
         const isOwner = isFromMe || senderNumber === config.ownerNumber.replace(/[^\d]/g, '');
+
+        if (!isOwner && body.startsWith(COMMAND_PREFIX)) {
+             const args = body.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
+             const cmdName = args.shift().toLowerCase();
+             const restrictedCmds = ['restart', 'shutdown', 'stop', 'logout'];
+             if (restrictedCmds.includes(cmdName)) {
+                 return await sock.sendMessage(remoteJid, { text: '❌ This command is restricted to the bot owner.' }, { quoted: msg });
+             }
+        }
 
         if (isGroup && !isFromMe && antitag?.onMessage) {
           await antitag.onMessage(msg, { sock });
