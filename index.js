@@ -13,10 +13,13 @@ import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
 import axios from 'axios'; 
 import archiver from 'archiver';
 import { loadSettings, saveSettings, updateSetting, getCurrentSettings } from './lib/persistentData.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 import { handleLinkDetection } from './eclipse-plug/antilink.js';
 import isAdmin from './lib/isAdmin.js';
 import { buttonResponses } from './lib/menuButtons.js';
@@ -24,10 +27,8 @@ import { storeMessage, handleMessageRevocation } from './eclipse-plug/self/antid
 import { readState as readAnticallState } from './eclipse-plug/self/anticall.js';
 import { checkAutoGreetings } from './eclipse-plug/self/autogreet.js';
 import antitag from './eclipse-plug/antitag.js';
+import antimention from './eclipse-plug/antimention.js';
 import './lib/preview.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const TEST_MODE = process.env.TEST_MODE_ONLY === 'true';
 
@@ -532,12 +533,12 @@ async function startBot() {
              }
         }
 
-        if (isGroup && !isFromMe && antitag?.onMessage) {
-          await antitag.onMessage(msg, { sock });
-        }
 
         // Antilink monitor (Groups only, not from bot)
         if (isGroup && !isFromMe) {
+          if (antitag?.onMessage) await antitag.onMessage(msg, { sock });
+          if (antimention?.onMessage) await antimention.onMessage(msg, { sock });
+          
           const userMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || '';
 
           // Anti WhatsApp Channel Link
